@@ -1,0 +1,6 @@
+Flask==2.3.2
+Flask-Cors==4.0.0
+openai==1.25.0
+python-dotenv==1.0.1
+gunicorn==22.0.0
+httpx==0.23.0  # Added to pin the httpx version

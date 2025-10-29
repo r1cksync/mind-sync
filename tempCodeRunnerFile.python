@@ -1,0 +1,145 @@
+import os
+import numpy as np
+import cv2
+import psutil
+import logging
+import time
+from tensorflow.keras.models import load_model
+from tensorflow.keras.applications.resnet50 import preprocess_input
+from tensorflow.keras.metrics import MeanSquaredError
+import tensorflow as tf
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Function to get current memory usage in MB
+def get_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    return mem_info.rss / 1024 / 1024  # Convert bytes to MB
+
+# Log memory usage with a message
+def log_memory_usage(step):
+    mem_usage = get_memory_usage()
+    logging.info(f"Memory usage at {step}: {mem_usage:.2f} MB")
+
+# Function to get file size in MB
+def get_file_size(file_path):
+    if os.path.exists(file_path):
+        size_bytes = os.path.getsize(file_path)
+        return size_bytes / 1024 / 1024  # Convert bytes to MB
+    return 0
+
+# Function to get disk usage in GB
+def get_disk_usage(path):
+    disk = psutil.disk_usage(path)
+    total = disk.total / 1024 / 1024 / 1024  # Convert bytes to GB
+    used = disk.used / 1024 / 1024 / 1024  # Convert bytes to GB
+    free = disk.free / 1024 / 1024 / 1024  # Convert bytes to GB
+    return total, used, free
+
+# Log disk usage with a message
+def log_disk_usage(step, path):
+    total, used, free = get_disk_usage(path)
+    logging.info(f"Disk usage at {step} (path: {path}): Total: {total:.2f} GB, Used: {used:.2f} GB, Free: {free:.2f} GB")
+
+# Path to the model (local path)
+MODEL_PATH = r"C:\Users\user\Downloads\sagnikmining\sagnikmining\models\stress_model.h5"
+
+# Path to the image
+IMAGE_PATH = r"C:\Users\user\Pictures\Camera Roll\WIN_20250404_15_24_07_Pro.jpg"
+
+# Check if the model and image files exist
+if not os.path.exists(MODEL_PATH):
+    logging.error(f"Model file not found at {MODEL_PATH}. Please ensure the path is correct.")
+    exit(1)
+
+if not os.path.exists(IMAGE_PATH):
+    logging.error(f"Image file not found at {IMAGE_PATH}. Please ensure the path is correct.")
+    exit(1)
+
+# Log the size of the model and image files
+model_size = get_file_size(MODEL_PATH)
+image_size = get_file_size(IMAGE_PATH)
+logging.info(f"Model file size ({MODEL_PATH}): {model_size:.2f} MB")
+logging.info(f"Image file size ({IMAGE_PATH}): {image_size:.2f} MB")
+
+# Log disk usage before starting
+log_disk_usage("before starting", os.path.dirname(MODEL_PATH))
+
+# Log memory usage before loading the model
+log_memory_usage("before loading model")
+
+# Load the model
+logging.info("Starting to load the stress detection model...")
+start_time = time.time()
+try:
+    model = load_model(MODEL_PATH, custom_objects={'mse': MeanSquaredError()})
+    logging.info("Stress detection model loaded successfully.")
+except Exception as e:
+    logging.error(f"Failed to load stress detection model: {str(e)}")
+    exit(1)
+load_time = time.time() - start_time
+logging.info(f"Model loading took {load_time:.2f} seconds")
+
+# Log memory usage after loading the model
+log_memory_usage("after loading model")
+
+# Log disk usage after loading the model
+log_disk_usage("after loading model", os.path.dirname(MODEL_PATH))
+
+# Function to preprocess the image
+def load_and_preprocess_image(image_path):
+    # Load the image in grayscale (FER2013 images are grayscale)
+    img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    if img is None:
+        raise ValueError(f"Could not load image from {image_path}")
+    
+    # Resize to 224x224 (model input size)
+    img = cv2.resize(img, (224, 224))
+    
+    # Convert grayscale to RGB by duplicating channels
+    img = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+    
+    # Convert to numpy array and add batch dimension
+    img = np.expand_dims(img, axis=0)
+    
+    # Preprocess the image for ResNet50
+    img = preprocess_input(img)
+    return img
+
+# Log memory usage before prediction
+log_memory_usage("before prediction")
+
+# Perform a prediction with the real image
+logging.info("Starting prediction...")
+start_time = time.time()
+try:
+    img = load_and_preprocess_image(IMAGE_PATH)
+    stress_level = model.predict(img)[0][0]
+    stress_level = float(np.clip(stress_level, 0, 100))
+    logging.info(f"Predicted stress level: {stress_level}")
+except Exception as e:
+    logging.error(f"Error during prediction: {e}")
+    exit(1)
+predict_time = time.time() - start_time
+logging.info(f"Prediction took {predict_time:.2f} seconds")
+
+# Log memory usage after prediction
+log_memory_usage("after prediction")
+
+# Log disk usage after prediction
+log_disk_usage("after prediction", os.path.dirname(MODEL_PATH))
+
+# Summary of memory and disk usage
+logging.info("Memory usage summary:")
+logging.info(f" - Before loading model: {get_memory_usage():.2f} MB")
+logging.info(f" - After loading model: {get_memory_usage():.2f} MB")
+logging.info(f" - After prediction: {get_memory_usage():.2f} MB")
+logging.info(f"Peak memory usage (approximate): {get_memory_usage():.2f} MB")
+
+logging.info("Storage usage summary:")
+logging.info(f" - Model file size: {model_size:.2f} MB")
+logging.info(f" - Image file size: {image_size:.2f} MB")
+total, used, free = get_disk_usage(os.path.dirname(MODEL_PATH))
+logging.info(f" - Final disk usage (path: {os.path.dirname(MODEL_PATH)}): Total: {total:.2f} GB, Used: {used:.2f} GB, Free: {free:.2f} GB")
